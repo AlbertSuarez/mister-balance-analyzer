@@ -27,6 +27,26 @@ def __parse_transaction_type(type_str):
     return type_map.get(type_str, type_str)
 
 
+def __parse_reason(reason):
+    # Parse reason field to extract footballer and league player
+    footballer = None
+    league_player_associated = None
+    # Pattern: "Footballer to League Player" (buyout_sale, buyout_signing, loan_purchase, loan_sale, purchase, sale)
+    if ' to ' in reason:
+        parts = reason.split(' to ')
+        if len(parts) == 2:
+            footballer = parts[0].strip()
+            league_player_associated = parts[1].strip() if parts[1].strip() != 'Mister' else None
+    # Pattern: "Modificación de cláusula (X%) de Footballer" (clause_increase)
+    elif 'Modificación de cláusula' in reason:
+        # Split on the last occurrence of ' de '
+        last_de_idx = reason.rfind(' de ')
+        if last_de_idx != -1:
+            footballer = reason[last_de_idx + 4 :].strip()
+    # Pattern: "Jornada X" (bonuses) - no footballer or league player
+    return footballer, league_player_associated
+
+
 def _parse_html(input_html):
     # Read the HTML content
     with open(input_html, 'r', encoding='utf-8') as f:
@@ -49,9 +69,10 @@ def _parse_html(input_html):
         type_div = left_div.find('div', class_='type')
         transaction_type_raw = type_div.get_text(strip=True) if type_div else ''
         transaction_type = __parse_transaction_type(transaction_type_raw)
-        # Extract reason/description
+        # Extract reason/description and parse to extract footballer and league player
         reason_div = left_div.find('div', class_='reason')
         reason = reason_div.get_text(strip=True, separator=' ') if reason_div else ''
+        footballer, league_player_associated = __parse_reason(reason)
         # Extract date and convert to UTC datetime
         date_div = left_div.find('div', class_='date')
         date_full_str = date_div.get('title', '') if date_div else ''
@@ -83,7 +104,8 @@ def _parse_html(input_html):
         transactions.append(
             {
                 'type': transaction_type,
-                'reason': reason,
+                'footballer': footballer,
+                'league_player_associated': league_player_associated,
                 'date_full': date_full,
                 'amount': amount,
                 'balance_after': balance_after,

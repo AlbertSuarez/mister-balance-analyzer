@@ -287,7 +287,7 @@ def _save_pdf(analytics, output_pdf):
     story.append(Paragraph('MISTER BALANCE ANALYTICS', title_style))
     story.append(Spacer(1, 0.2 * inch))
     # Total Profitability
-    story.append(Paragraph('📊 Total Profitability (Sold Players)', heading_style))
+    story.append(Paragraph('Total Profitability (Sold Players)', heading_style))
     profit_data = [[f'{analytics["total_profitability"]:,}']]
     profit_table = Table(profit_data, colWidths=[5 * inch])
     profit_table.setStyle(
@@ -306,7 +306,7 @@ def _save_pdf(analytics, output_pdf):
     story.append(profit_table)
     story.append(Spacer(1, 0.3 * inch))
     # Transaction Type Breakdown
-    story.append(Paragraph('📈 Transaction Type Breakdown', heading_style))
+    story.append(Paragraph('Transaction Type Breakdown', heading_style))
     type_data = [['Type', 'Count', 'Total', 'Average']]
     for trans_type, summary in sorted(analytics['type_summary'].items()):
         type_data.append(
@@ -330,7 +330,7 @@ def _save_pdf(analytics, output_pdf):
     story.append(type_table)
     story.append(Spacer(1, 0.3 * inch))
     # Best Deals
-    story.append(Paragraph('💰 Best Deals (Highest Profit)', heading_style))
+    story.append(Paragraph('Best Deals (Highest Profit)', heading_style))
     best_data = [['#', 'Player', 'Spent', 'Earned', 'Net Profit']]
     for i, player in enumerate(analytics['best_deals'], 1):
         best_data.append(
@@ -360,7 +360,7 @@ def _save_pdf(analytics, output_pdf):
     story.append(best_table)
     story.append(PageBreak())
     # Biggest Losses
-    story.append(Paragraph('📉 Biggest Losses', heading_style))
+    story.append(Paragraph('Biggest Losses', heading_style))
     loss_data = [['#', 'Player', 'Spent', 'Earned', 'Net Loss']]
     for i, player in enumerate(analytics['biggest_losses'], 1):
         loss_data.append(
@@ -390,7 +390,7 @@ def _save_pdf(analytics, output_pdf):
     story.append(loss_table)
     story.append(Spacer(1, 0.3 * inch))
     # Top Buyout Signings
-    story.append(Paragraph('🔥 Most Expensive Buyout Signings', heading_style))
+    story.append(Paragraph('Most Expensive Buyout Signings', heading_style))
     signing_data = [['#', 'Player', 'Amount', 'From']]
     for i, t in enumerate(analytics['top_buyout_signings'], 1):
         signing_data.append(
@@ -414,7 +414,7 @@ def _save_pdf(analytics, output_pdf):
     story.append(signing_table)
     story.append(PageBreak())
     # Top Buyout Sales
-    story.append(Paragraph('💸 Highest Buyout Sales', heading_style))
+    story.append(Paragraph('Highest Buyout Sales', heading_style))
     sale_data = [['#', 'Player', 'Amount', 'To']]
     for i, t in enumerate(analytics['top_buyout_sales'], 1):
         sale_data.append([str(i), t['footballer'], f'+{t["amount"]:,}', t.get('league_player_associated', '-') or '-'])
@@ -436,7 +436,7 @@ def _save_pdf(analytics, output_pdf):
     story.append(sale_table)
     story.append(Spacer(1, 0.3 * inch))
     # Trading Partners
-    story.append(Paragraph('🤝 Trading Partners (by Net Exchange)', heading_style))
+    story.append(Paragraph('Trading Partners (by Net Exchange)', heading_style))
     partner_data = [['#', 'Partner', 'Purchases', 'Sales', 'Net Exchange']]
     for i, partner in enumerate(analytics['top_trading_partners'], 1):
         net_sign = '+' if partner['net_exchange'] >= 0 else ''
@@ -467,7 +467,7 @@ def _save_pdf(analytics, output_pdf):
     story.append(partner_table)
     story.append(PageBreak())
     # Clause Increase Summary
-    story.append(Paragraph('⚠️ Clause Increase Summary', heading_style))
+    story.append(Paragraph('Clause Increase Summary', heading_style))
     clause_sum = analytics['clause_increase_summary']
     clause_data = [
         ['Total Increases', 'Total Cost', 'Average Cost'],
@@ -491,9 +491,7 @@ def _save_pdf(analytics, output_pdf):
     story.append(clause_table)
     story.append(Spacer(1, 0.3 * inch))
     # Current Squad
-    story.append(
-        Paragraph(f'👥 Current Squad Investment: {analytics["current_squad_total_investment"]:,}', heading_style)
-    )
+    story.append(Paragraph(f'Current Squad Investment: {analytics["current_squad_total_investment"]:,}', heading_style))
     story.append(Paragraph(f'Players in squad: {len(analytics["current_squad"])}', subheading_style))
     squad_data = [['#', 'Player', 'Total Invested']]
     for i, player in enumerate(analytics['current_squad'], 1):

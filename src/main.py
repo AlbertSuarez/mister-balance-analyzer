@@ -68,7 +68,7 @@ def __parse_reason(reason):
 
 def __create_chart_transaction_types(analytics):
     # Create pie chart for transaction types
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(6, 6))
     type_summary = analytics['type_summary']
     # Only show types with transactions
     types = []
@@ -80,6 +80,7 @@ def __create_chart_transaction_types(analytics):
     colors_list = plt.cm.Set3(range(len(types)))
     ax.pie(counts, labels=types, autopct='%1.1f%%', colors=colors_list, startangle=90)
     ax.set_title('Transaction Distribution')
+    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
     plt.tight_layout()
     # Save to bytes
     img_buffer = io.BytesIO()
@@ -472,7 +473,7 @@ def _save_pdf(analytics, output_pdf, transactions):
     # Transaction Type Pie Chart
     type_chart = __create_chart_transaction_types(analytics)
     if type_chart:
-        story.append(Image(type_chart, width=5 * inch, height=3 * inch))
+        story.append(Image(type_chart, width=5 * inch, height=5 * inch))
         story.append(Spacer(1, 0.2 * inch))
     # ROI Distribution Chart
     roi_chart = __create_chart_roi_distribution(analytics)

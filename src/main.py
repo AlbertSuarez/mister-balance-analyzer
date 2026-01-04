@@ -13,6 +13,20 @@ def parse_args():
     return args
 
 
+def __parse_transaction_type(type_str):
+    type_map = {
+        'Bonificación': 'bonuses',  # Bonuses/rewards received from the game
+        'Buyout sale': 'buyout_sale',  # Selling a player via their buyout clause
+        'Buyout signing': 'buyout_signing',  # Buying a player via their buyout clause
+        'Loan purchase': 'loan_purchase',  # Acquiring a player on loan
+        'Loan sale': 'loan_sale',  # Loaning out a player to another team
+        'Penalización': 'clause_increase',  # Player's clause increased
+        'Purchase': 'purchase',  # Regular player purchases from the market
+        'Sale': 'sale',  # Regular player sales to the market
+    }
+    return type_map.get(type_str, type_str)
+
+
 def _parse_html(input_html):
     # Read the HTML content
     with open(input_html, 'r', encoding='utf-8') as f:
@@ -33,7 +47,8 @@ def _parse_html(input_html):
             continue
         # Extract transaction type
         type_div = left_div.find('div', class_='type')
-        transaction_type = type_div.get_text(strip=True) if type_div else ''
+        transaction_type_raw = type_div.get_text(strip=True) if type_div else ''
+        transaction_type = __parse_transaction_type(transaction_type_raw)
         # Extract reason/description
         reason_div = left_div.find('div', class_='reason')
         reason = reason_div.get_text(strip=True, separator=' ') if reason_div else ''

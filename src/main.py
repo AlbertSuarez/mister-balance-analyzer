@@ -244,26 +244,67 @@ def _analyze(transactions):
                 player_transactions[t['footballer']]['sales'].append(t)
             elif t['type'] == 'clause_increase':
                 player_transactions[t['footballer']]['clause_increases'].append(t)
-    # Calculate profitability for each player
+    # Calculate profitability per "stint" (each time a player is in the team)
+    # A stint starts with a purchase and ends with a sale
     player_profitability = []
     for player, data in player_transactions.items():
-        total_spent = sum(abs(t['amount']) for t in data['purchases'])
-        total_spent += sum(abs(t['amount']) for t in data['clause_increases'])
-        total_earned = sum(t['amount'] for t in data['sales'])
-        net_profit = total_earned - total_spent
-        # Only include players who have been sold AND were actually purchased (not initial free squad)
-        if data['sales'] and data['purchases']:
-            player_profitability.append(
-                {
-                    'player': player,
-                    'total_spent': total_spent,
-                    'total_earned': total_earned,
-                    'net_profit': net_profit,
-                    'num_purchases': len(data['purchases']),
-                    'num_sales': len(data['sales']),
-                    'num_clause_increases': len(data['clause_increases']),
-                }
-            )
+        if not data['purchases']:
+            continue
+        # Sort all transactions by date
+        all_trans = data['purchases'] + data['sales'] + data['clause_increases']
+        all_trans.sort(key=lambda x: x['date_full'])
+        # Group transactions into stints
+        stints = []
+        current_stint = {'purchases': [], 'sales': [], 'clause_increases': []}
+        in_stint = False
+        for t in all_trans:
+            if t['type'] in ['purchase', 'buyout_signing', 'loan_purchase']:
+                if not in_stint:
+                    # Start new stint
+                    current_stint = {'purchases': [t], 'sales': [], 'clause_increases': []}
+                    in_stint = True
+                else:
+                    # Additional purchase in same stint (shouldn't happen often)
+                    current_stint['purchases'].append(t)
+            elif t['type'] in ['sale', 'buyout_sale', 'loan_sale']:
+                if in_stint:
+                    # End current stint
+                    current_stint['sales'].append(t)
+                    stints.append(current_stint)
+                    in_stint = False
+                else:
+                    # Sale without purchase (initial squad player sold)
+                    stints.append({'purchases': [], 'sales': [t], 'clause_increases': []})
+            elif t['type'] == 'clause_increase':
+                if in_stint:
+                    current_stint['clause_increases'].append(t)
+        # If still in stint (player currently in squad), add it
+        if in_stint:
+            stints.append(current_stint)
+        # Calculate profitability for completed stints (those with sales)
+        for stint_idx, stint in enumerate(stints):
+            if stint['sales'] and stint['purchases']:  # Only completed stints with purchases
+                total_spent = sum(abs(t['amount']) for t in stint['purchases'])
+                total_spent += sum(abs(t['amount']) for t in stint['clause_increases'])
+                total_earned = sum(t['amount'] for t in stint['sales'])
+                net_profit = total_earned - total_spent
+                # Add stint number if player has multiple stints
+                player_name = (
+                    player
+                    if len([s for s in stints if s['sales'] and s['purchases']]) == 1
+                    else f"{player} (stint {stint_idx + 1})"
+                )
+                player_profitability.append(
+                    {
+                        'player': player_name,
+                        'total_spent': total_spent,
+                        'total_earned': total_earned,
+                        'net_profit': net_profit,
+                        'num_purchases': len(stint['purchases']),
+                        'num_sales': len(stint['sales']),
+                        'num_clause_increases': len(stint['clause_increases']),
+                    }
+                )
     # Sort by profitability
     player_profitability.sort(key=lambda x: x['net_profit'], reverse=True)
     analytics['player_profitability'] = player_profitability
@@ -376,34 +417,53 @@ def _analyze(transactions):
     analytics['current_squad'] = current_squad
     analytics['current_squad_total_investment'] = sum(p['total_invested'] for p in current_squad)
 
-    # 10. Average Hold Time & ROI
+    # 10. Average Hold Time & ROI (calculated per stint from player_profitability)
     print('Analyzing hold time and ROI...')
-    hold_times = []
-    roi_data = []
+    # Calculate hold times per stint and match with profitability data
+    player_hold_times = {}  # Map player name to hold days
     for player, data in player_transactions.items():
-        if data['sales'] and data['purchases']:
-            # Calculate hold time (from first purchase to last sale)
-            first_purchase_date = min(t['date_full'] for t in data['purchases'] if t['date_full'])
-            last_sale_date = max(t['date_full'] for t in data['sales'] if t['date_full'])
-            if first_purchase_date and last_sale_date:
-                hold_days = (last_sale_date - first_purchase_date).days
+        if not data['purchases']:
+            continue
+        # Sort all transactions by date
+        all_trans = data['purchases'] + data['sales']
+        all_trans.sort(key=lambda x: x['date_full'])
+        # Find purchase-sale pairs (stints)
+        stint_idx = 0
+        purchases_queue = []
+        for t in all_trans:
+            if t['type'] in ['purchase', 'buyout_signing', 'loan_purchase']:
+                purchases_queue.append(t)
+            elif t['type'] in ['sale', 'buyout_sale', 'loan_sale'] and purchases_queue:
+                # Match with most recent purchase
+                purchase = purchases_queue[-1]
+                if purchase['date_full'] and t['date_full']:
+                    hold_days = (t['date_full'] - purchase['date_full']).days
+                    # Determine player name (with stint number if multiple)
+                    num_completed_stints = len([s for s in [data['purchases'], data['sales']] if s])
+                    player_key = player if stint_idx == 0 else f"{player} (stint {stint_idx + 1})"
+                    player_hold_times[player_key] = hold_days
+                    stint_idx += 1
+                purchases_queue = []  # Clear queue after sale
+    # Build ROI data with hold times
+    roi_data = []
+    hold_times = []
+    for profit_entry in player_profitability:
+        if profit_entry['total_spent'] > 0:
+            roi_percentage = profit_entry['net_profit'] / profit_entry['total_spent'] * 100
+            player_name = profit_entry['player']
+            hold_days = player_hold_times.get(player_name, 0)
+            if hold_days > 0:
                 hold_times.append(hold_days)
-                # Calculate ROI
-                total_spent = sum(abs(t['amount']) for t in data['purchases'])
-                total_spent += sum(abs(t['amount']) for t in data['clause_increases'])
-                total_earned = sum(t['amount'] for t in data['sales'])
-                net_profit = total_earned - total_spent
-                roi_percentage = (net_profit / total_spent * 100) if total_spent > 0 else 0
-                roi_data.append(
-                    {
-                        'player': player,
-                        'roi_percentage': roi_percentage,
-                        'net_profit': net_profit,
-                        'total_spent': total_spent,
-                        'total_earned': total_earned,
-                        'hold_days': hold_days,
-                    }
-                )
+            roi_data.append(
+                {
+                    'player': player_name,
+                    'roi_percentage': roi_percentage,
+                    'net_profit': profit_entry['net_profit'],
+                    'total_spent': profit_entry['total_spent'],
+                    'total_earned': profit_entry['total_earned'],
+                    'hold_days': hold_days,
+                }
+            )
     analytics['average_hold_time'] = sum(hold_times) / len(hold_times) if hold_times else 0
     analytics['roi_data'] = sorted(roi_data, key=lambda x: x['roi_percentage'], reverse=True)
     analytics['best_roi_players'] = [p for p in analytics['roi_data'] if p['roi_percentage'] > 0][:20]

@@ -38,7 +38,6 @@ def _parse_html(input_html):
         reason = reason_div.get_text(strip=True, separator=' ') if reason_div else ''
         # Extract date
         date_div = left_div.find('div', class_='date')
-        date_text = date_div.get_text(strip=True) if date_div else ''
         date_full = date_div.get('title', '') if date_div else ''
         # Extract amount
         amount_div = right_div.find('div', class_='amount')
@@ -65,7 +64,6 @@ def _parse_html(input_html):
             {
                 'type': transaction_type,
                 'reason': reason,
-                'date': date_text,
                 'date_full': date_full,
                 'amount': amount,
                 'balance_after': balance_after,

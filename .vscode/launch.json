@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Main Program",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.main",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true,
+            "console": "internalConsole",
+            "args": ["--input_html", "data/mister.html", "--output_pdf", "data/mister.pdf"]
+        }
+    ]
+}

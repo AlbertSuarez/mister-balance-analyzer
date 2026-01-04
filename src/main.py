@@ -1,5 +1,6 @@
 import argparse
 import re
+from datetime import datetime, timezone
 
 from bs4 import BeautifulSoup
 
@@ -36,9 +37,16 @@ def _parse_html(input_html):
         # Extract reason/description
         reason_div = left_div.find('div', class_='reason')
         reason = reason_div.get_text(strip=True, separator=' ') if reason_div else ''
-        # Extract date
+        # Extract date and convert to UTC datetime
         date_div = left_div.find('div', class_='date')
-        date_full = date_div.get('title', '') if date_div else ''
+        date_full_str = date_div.get('title', '') if date_div else ''
+        date_full = None
+        if date_full_str:
+            try:
+                # Parse format: "04/01/2026 – 14:41"
+                date_full = datetime.strptime(date_full_str, '%d/%m/%Y – %H:%M').replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
         # Extract amount
         amount_div = right_div.find('div', class_='amount')
         amount_text = amount_div.get_text(strip=True) if amount_div else ''

@@ -10,6 +10,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Mister Balance Analyzer')
     parser.add_argument('--input_html', type=str, required=True, help='Input HTMLfile')
     parser.add_argument('--output_pdf', type=str, required=True, help='Output PDF file')
+    parser.add_argument('--print_top_n', type=int, required=False, default=20, help='Print top N players')
     args = parser.parse_args()
     return args
 
@@ -237,7 +238,7 @@ def _analyze(transactions):
     return analytics
 
 
-def _print_analytics(analytics):
+def _print_analytics(analytics, print_top_n):
     # Print analytics
     print('\n' + '=' * 70)
     print('MISTER BALANCE ANALYTICS')
@@ -255,34 +256,34 @@ def _print_analytics(analytics):
         print(f'    Average: {summary["avg_amount"]:,.0f}')
 
     # Best deals
-    print('\n💰 TOP 20 BEST DEALS (Highest Profit):')
-    for i, player in enumerate(analytics['best_deals'][:20], 1):
+    print(f'\n💰 TOP {print_top_n} BEST DEALS (Highest Profit):')
+    for i, player in enumerate(analytics['best_deals'][:print_top_n], 1):
         print(f'  {i}. {player["player"]}: +{player["net_profit"]:,}')
         print(f'     Spent: {player["total_spent"]:,} | Earned: {player["total_earned"]:,}')
 
     # Biggest losses
-    print('\n📉 TOP 20 BIGGEST LOSSES:')
-    for i, player in enumerate(analytics['biggest_losses'][:20], 1):
+    print(f'\n📉 TOP {print_top_n} BIGGEST LOSSES:')
+    for i, player in enumerate(analytics['biggest_losses'][:print_top_n], 1):
         print(f'  {i}. {player["player"]}: {player["net_profit"]:,}')
         print(f'     Spent: {player["total_spent"]:,} | Earned: {player["total_earned"]:,}')
 
     # Top buyout signings
-    print('\n🔥 TOP 20 MOST EXPENSIVE BUYOUT SIGNINGS:')
-    for i, t in enumerate(analytics['top_buyout_signings'][:20], 1):
+    print(f'\n🔥 TOP {print_top_n} MOST EXPENSIVE BUYOUT SIGNINGS:')
+    for i, t in enumerate(analytics['top_buyout_signings'][:print_top_n], 1):
         print(f'  {i}. {t["footballer"]}: {t["amount"]:,}')
         if t['league_player_associated']:
             print(f'     From: {t["league_player_associated"]}')
 
     # Top buyout sales
-    print('\n💸 TOP 20 HIGHEST BUYOUT SALES:')
-    for i, t in enumerate(analytics['top_buyout_sales'][:20], 1):
+    print(f'\n💸 TOP {print_top_n} HIGHEST BUYOUT SALES:')
+    for i, t in enumerate(analytics['top_buyout_sales'][:print_top_n], 1):
         print(f'  {i}. {t["footballer"]}: +{t["amount"]:,}')
         if t['league_player_associated']:
             print(f'     To: {t["league_player_associated"]}')
 
     # Top trading partners
-    print('\n🤝 TOP 20 TRADING PARTNERS (by Net Exchange):')
-    for i, partner in enumerate(analytics['top_trading_partners'][:20], 1):
+    print(f'\n🤝 TOP {print_top_n} TRADING PARTNERS (by Net Exchange):')
+    for i, partner in enumerate(analytics['top_trading_partners'][:print_top_n], 1):
         print(f'  {i}. {partner["partner"]}')
         print(f'     Purchases: {partner["purchases"]} | Sales: {partner["sales"]}')
         print(f'     Spent: {partner["spent"]:,} | Earned: {partner["earned"]:,}')
@@ -299,18 +300,18 @@ def _print_analytics(analytics):
     print(f'\n👥 CURRENT SQUAD INVESTMENT: {analytics["current_squad_total_investment"]:,}')
     print(f'  Players in squad: {len(analytics["current_squad"])}')
     print('  Squad investments:')
-    for i, player in enumerate(analytics['current_squad'][:20], 1):
+    for i, player in enumerate(analytics['current_squad'][:print_top_n], 1):
         print(f'    {i}. {player["player"]}: {player["total_invested"]:,}')
 
     print('\n' + '=' * 70)
 
 
-def main(input_html, output_pdf):
+def main(input_html, output_pdf, print_top_n):
     transactions = _parse_html(input_html)
     analytics = _analyze(transactions)
-    _print_analytics(analytics)
+    _print_analytics(analytics, print_top_n)
 
 
 if __name__ == '__main__':
     args = parse_args()
-    main(args.input_html, args.output_pdf)
+    main(args.input_html, args.output_pdf, args.print_top_n)

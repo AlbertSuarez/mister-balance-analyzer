@@ -1,14 +1,18 @@
 import argparse
+import io
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
 
+import matplotlib
+import matplotlib.pyplot as plt
 from bs4 import BeautifulSoup
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import (
+    Image,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -17,11 +21,14 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+matplotlib.use('Agg')  # Use non-interactive backend
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Mister Balance Analyzer')
-    parser.add_argument('--input_html', type=str, required=True, help='Input HTMLfile')
+    parser.add_argument('--input_html', type=str, required=True, help='Input HTML file')
     parser.add_argument('--output_pdf', type=str, required=True, help='Output PDF file')
+    parser.add_argument('--date-range', type=str, help='Date range filter (format: YYYY-MM-DD,YYYY-MM-DD)')
     return parser.parse_args()
 
 
@@ -57,6 +64,85 @@ def __parse_reason(reason):
             footballer = reason[last_de_idx + 4 :].strip()
     # Pattern: "Jornada X" (bonuses) - no footballer or league player
     return footballer, league_player_associated
+
+
+def __create_chart_transaction_types(analytics):
+    # Create pie chart for transaction types
+    fig, ax = plt.subplots(figsize=(6, 4))
+    type_summary = analytics['type_summary']
+    # Only show types with transactions
+    types = []
+    counts = []
+    for trans_type, summary in sorted(type_summary.items()):
+        if summary['count'] > 0:
+            types.append(trans_type)
+            counts.append(summary['count'])
+    colors_list = plt.cm.Set3(range(len(types)))
+    ax.pie(counts, labels=types, autopct='%1.1f%%', colors=colors_list, startangle=90)
+    ax.set_title('Transaction Distribution')
+    plt.tight_layout()
+    # Save to bytes
+    img_buffer = io.BytesIO()
+    plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+    img_buffer.seek(0)
+    plt.close()
+    return img_buffer
+
+
+def __create_chart_balance_timeline(transactions):
+    # Create line chart for balance over time
+    if not transactions:
+        return None
+    fig, ax = plt.subplots(figsize=(8, 4))
+    # Sort by date
+    sorted_trans = sorted([t for t in transactions if t['date_full']], key=lambda x: x['date_full'])
+    if not sorted_trans:
+        plt.close()
+        return None
+    dates = [t['date_full'] for t in sorted_trans]
+    balances = [t['balance_after'] for t in sorted_trans]
+    ax.plot(dates, balances, linewidth=2, color='#2e7d32', marker='o', markersize=2)
+    ax.set_title('Balance Over Time')
+    ax.set_xlabel('Date')
+    ax.set_ylabel('Balance')
+    ax.grid(True, alpha=0.3)
+
+    # Format Y-axis in millions
+    def millions_formatter(x, pos):
+        return f'{x/1e6:.0f}M'
+
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(millions_formatter))
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    # Save to bytes
+    img_buffer = io.BytesIO()
+    plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+    img_buffer.seek(0)
+    plt.close()
+    return img_buffer
+
+
+def __create_chart_roi_distribution(analytics):
+    # Create bar chart for top ROI players
+    fig, ax = plt.subplots(figsize=(8, 5))
+    best_roi = analytics['best_roi_players'][:10]
+    if not best_roi:
+        plt.close()
+        return None
+    players = [p['player'][:15] + '...' if len(p['player']) > 15 else p['player'] for p in best_roi]
+    roi_values = [p['roi_percentage'] for p in best_roi]
+    colors_list = ['#2e7d32' if v > 0 else '#c62828' for v in roi_values]
+    ax.barh(players, roi_values, color=colors_list)
+    ax.set_xlabel('ROI (%)')
+    ax.set_title('Top 10 Players by ROI')
+    ax.grid(True, axis='x', alpha=0.3)
+    plt.tight_layout()
+    # Save to bytes
+    img_buffer = io.BytesIO()
+    plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+    img_buffer.seek(0)
+    plt.close()
+    return img_buffer
 
 
 def _parse_html(input_html):
@@ -126,6 +212,21 @@ def _parse_html(input_html):
     # Return the transactions
     print(f'✅ {len(transactions)} transactions parsed')
     return transactions
+
+
+def _filter_transactions_by_date(transactions, date_range_str):
+    if not date_range_str:
+        return transactions
+    try:
+        start_str, end_str = date_range_str.split(',')
+        start_date = datetime.strptime(start_str.strip(), '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        end_date = datetime.strptime(end_str.strip(), '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        filtered = [t for t in transactions if t['date_full'] and start_date <= t['date_full'] <= end_date]
+        print(f'📅 Filtered to {len(filtered)} transactions between {start_str} and {end_str}')
+        return filtered
+    except Exception as e:
+        print(f'⚠️ Error parsing date range: {e}. Using all transactions.')
+        return transactions
 
 
 def _analyze(transactions):
@@ -255,10 +356,52 @@ def _analyze(transactions):
     analytics['current_squad'] = current_squad
     analytics['current_squad_total_investment'] = sum(p['total_invested'] for p in current_squad)
 
+    # 10. Average Hold Time & ROI
+    print('Analyzing hold time and ROI...')
+    hold_times = []
+    roi_data = []
+    for player, data in player_transactions.items():
+        if data['sales'] and data['purchases']:
+            # Calculate hold time (from first purchase to last sale)
+            first_purchase_date = min(t['date_full'] for t in data['purchases'] if t['date_full'])
+            last_sale_date = max(t['date_full'] for t in data['sales'] if t['date_full'])
+            if first_purchase_date and last_sale_date:
+                hold_days = (last_sale_date - first_purchase_date).days
+                hold_times.append(hold_days)
+                # Calculate ROI
+                total_spent = sum(abs(t['amount']) for t in data['purchases'])
+                total_spent += sum(abs(t['amount']) for t in data['clause_increases'])
+                total_earned = sum(t['amount'] for t in data['sales'])
+                net_profit = total_earned - total_spent
+                roi_percentage = (net_profit / total_spent * 100) if total_spent > 0 else 0
+                roi_data.append(
+                    {
+                        'player': player,
+                        'roi_percentage': roi_percentage,
+                        'net_profit': net_profit,
+                        'total_spent': total_spent,
+                        'total_earned': total_earned,
+                        'hold_days': hold_days,
+                    }
+                )
+    analytics['average_hold_time'] = sum(hold_times) / len(hold_times) if hold_times else 0
+    analytics['roi_data'] = sorted(roi_data, key=lambda x: x['roi_percentage'], reverse=True)
+    analytics['best_roi_players'] = [p for p in analytics['roi_data'] if p['roi_percentage'] > 0][:20]
+    analytics['worst_roi_players'] = [p for p in analytics['roi_data'] if p['roi_percentage'] < 0][-20:]
+
+    # 11. Win Rate
+    print('Analyzing win rate...')
+    profitable_trades = len([p for p in roi_data if p['net_profit'] > 0])
+    total_trades = len(roi_data)
+    analytics['win_rate'] = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
+    analytics['total_trades'] = total_trades
+    analytics['profitable_trades'] = profitable_trades
+    analytics['losing_trades'] = total_trades - profitable_trades
+
     return analytics
 
 
-def _save_pdf(analytics, output_pdf):
+def _save_pdf(analytics, output_pdf, transactions):
     # Create PDF document
     doc = SimpleDocTemplate(output_pdf, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
     story = []
@@ -286,6 +429,56 @@ def _save_pdf(analytics, output_pdf):
     # Title
     story.append(Paragraph('MISTER BALANCE ANALYTICS', title_style))
     story.append(Spacer(1, 0.2 * inch))
+    # Executive Summary
+    story.append(Paragraph('Executive Summary', heading_style))
+    # Create summary dashboard with key metrics
+    summary_data = [
+        ['Metric', 'Value'],
+        ['Total Profitability', f'{analytics["total_profitability"]:,}'],
+        ['Win Rate', f'{analytics["win_rate"]:.1f}%'],
+        ['Total Trades', f'{analytics["total_trades"]}'],
+        ['Profitable Trades', f'✓ {analytics["profitable_trades"]}'],
+        ['Losing Trades', f'✗ {analytics["losing_trades"]}'],
+        ['Avg Hold Time', f'{analytics["average_hold_time"]:.0f} days'],
+        ['Current Squad Investment', f'{analytics["current_squad_total_investment"]:,}'],
+        ['Players in Squad', f'{len(analytics["current_squad"])}'],
+    ]
+    summary_table = Table(summary_data, colWidths=[3 * inch, 3 * inch])
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a237e')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#e8eaf6')),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#e8eaf6'), colors.HexColor('#f5f5f5')]),
+            ]
+        )
+    )
+    story.append(summary_table)
+    story.append(Spacer(1, 0.3 * inch))
+    # Add Charts
+    story.append(Paragraph('Performance Charts', heading_style))
+    # Balance Timeline Chart
+    balance_chart = __create_chart_balance_timeline(transactions)
+    if balance_chart:
+        story.append(Image(balance_chart, width=6 * inch, height=3 * inch))
+        story.append(Spacer(1, 0.2 * inch))
+    # Transaction Type Pie Chart
+    type_chart = __create_chart_transaction_types(analytics)
+    if type_chart:
+        story.append(Image(type_chart, width=5 * inch, height=3 * inch))
+        story.append(Spacer(1, 0.2 * inch))
+    # ROI Distribution Chart
+    roi_chart = __create_chart_roi_distribution(analytics)
+    if roi_chart:
+        story.append(Image(roi_chart, width=6 * inch, height=4 * inch))
+    story.append(PageBreak())
     # Total Profitability
     story.append(Paragraph('Total Profitability (Sold Players)', heading_style))
     profit_data = [[f'{analytics["total_profitability"]:,}']]
@@ -512,18 +705,83 @@ def _save_pdf(analytics, output_pdf):
         )
     )
     story.append(squad_table)
+    story.append(PageBreak())
+    # ROI Analysis
+    story.append(Paragraph('ROI Analysis (Return on Investment)', heading_style))
+    story.append(Paragraph(f'Average Hold Time: {analytics["average_hold_time"]:.0f} days', subheading_style))
+    # Best ROI Players
+    story.append(Paragraph('Best ROI Players', subheading_style))
+    roi_best_data = [['#', 'Player', 'ROI %', 'Profit', 'Hold Days']]
+    for i, player in enumerate(analytics['best_roi_players'][:20], 1):
+        roi_best_data.append(
+            [
+                str(i),
+                player['player'],
+                f'{player["roi_percentage"]:.1f}%',
+                f'+{player["net_profit"]:,}',
+                str(player['hold_days']),
+            ]
+        )
+    roi_best_table = Table(roi_best_data, colWidths=[0.3 * inch, 2.5 * inch, 1 * inch, 1.5 * inch, 0.7 * inch])
+    roi_best_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2e7d32')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f1f8e9')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(roi_best_table)
+    story.append(Spacer(1, 0.3 * inch))
+    # Worst ROI Players
+    story.append(Paragraph('Worst ROI Players', subheading_style))
+    roi_worst_data = [['#', 'Player', 'ROI %', 'Loss', 'Hold Days']]
+    for i, player in enumerate(analytics['worst_roi_players'][:20], 1):
+        roi_worst_data.append(
+            [
+                str(i),
+                player['player'],
+                f'{player["roi_percentage"]:.1f}%',
+                f'{player["net_profit"]:,}',
+                str(player['hold_days']),
+            ]
+        )
+    roi_worst_table = Table(roi_worst_data, colWidths=[0.3 * inch, 2.5 * inch, 1 * inch, 1.5 * inch, 0.7 * inch])
+    roi_worst_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#c62828')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ffebee')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(roi_worst_table)
     # Build PDF
     doc.build(story)
     print(f'✅ PDF saved to: {output_pdf}')
 
 
-def main(input_html, output_pdf):
+def main(input_html, output_pdf, date_range=None):
     transactions = _parse_html(input_html)
     if transactions:
+        if date_range:
+            transactions = _filter_transactions_by_date(transactions, date_range)
         analytics = _analyze(transactions)
-        _save_pdf(analytics, output_pdf)
+        _save_pdf(analytics, output_pdf, transactions)
 
 
 if __name__ == '__main__':
     args = parse_args()
-    main(args.input_html, args.output_pdf)
+    main(args.input_html, args.output_pdf, args.date_range)

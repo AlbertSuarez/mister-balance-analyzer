@@ -341,16 +341,35 @@ def _analyze(transactions):
     print('Analyzing current squad value...')
     current_squad = []
     for player, data in player_transactions.items():
-        # Include players who haven't been sold AND either were purchased OR have clause increases
-        if not data['sales'] and (data['purchases'] or data['clause_increases']):
-            total_invested = sum(abs(t['amount']) for t in data['purchases'])
-            total_invested += sum(abs(t['amount']) for t in data['clause_increases'])
+        # Check if player is currently in squad by looking at most recent transaction
+        all_player_trans = data['purchases'] + data['sales'] + data['clause_increases']
+        if not all_player_trans:
+            continue
+        # Sort by date to find most recent transaction
+        all_player_trans.sort(key=lambda x: x['date_full'])
+        most_recent = all_player_trans[-1]
+        # Player is in squad if most recent transaction is NOT a sale
+        is_in_squad = most_recent['type'] not in ['sale', 'buyout_sale', 'loan_sale']
+        if is_in_squad and (data['purchases'] or data['clause_increases']):
+            # Calculate investment only from transactions AFTER the last sale (if any)
+            last_sale_date = None
+            if data['sales']:
+                last_sale_date = max(t['date_full'] for t in data['sales'])
+            # Sum purchases and clause increases after last sale
+            if last_sale_date:
+                relevant_purchases = [t for t in data['purchases'] if t['date_full'] > last_sale_date]
+                relevant_clause_increases = [t for t in data['clause_increases'] if t['date_full'] > last_sale_date]
+            else:
+                relevant_purchases = data['purchases']
+                relevant_clause_increases = data['clause_increases']
+            total_invested = sum(abs(t['amount']) for t in relevant_purchases)
+            total_invested += sum(abs(t['amount']) for t in relevant_clause_increases)
             current_squad.append(
                 {
                     'player': player,
                     'total_invested': total_invested,
-                    'num_purchases': len(data['purchases']),
-                    'num_clause_increases': len(data['clause_increases']),
+                    'num_purchases': len(relevant_purchases),
+                    'num_clause_increases': len(relevant_clause_increases),
                 }
             )
     current_squad.sort(key=lambda x: x['total_invested'], reverse=True)

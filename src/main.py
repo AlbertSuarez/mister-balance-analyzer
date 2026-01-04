@@ -22,9 +22,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Mister Balance Analyzer')
     parser.add_argument('--input_html', type=str, required=True, help='Input HTMLfile')
     parser.add_argument('--output_pdf', type=str, required=True, help='Output PDF file')
-    parser.add_argument('--print_top_n', type=int, required=False, default=20, help='Print top N players')
-    args = parser.parse_args()
-    return args
+    return parser.parse_args()
 
 
 def __parse_transaction_type(type_str):
@@ -70,7 +68,7 @@ def _parse_html(input_html):
     # Find the balance history section
     balance_history = soup.find('ul', class_='balance-history')
     if not balance_history:
-        print('No balance history found')
+        print('⚠️ No balance history found')
         return []
     # Find all transaction items (li elements)
     transactions = []
@@ -126,6 +124,7 @@ def _parse_html(input_html):
             }
         )
     # Return the transactions
+    print(f'✅ {len(transactions)} transactions parsed')
     return transactions
 
 
@@ -133,6 +132,7 @@ def _analyze(transactions):
     analytics = {}
 
     # 1. Player profitability analysis
+    print('Analyzing player profitability...')
     player_transactions = defaultdict(lambda: {'purchases': [], 'sales': [], 'clause_increases': []})
     for t in transactions:
         if t['footballer']:
@@ -167,10 +167,12 @@ def _analyze(transactions):
     analytics['player_profitability'] = player_profitability
 
     # 2. Total profitability (players no longer in team)
+    print('Analyzing total profitability...')
     total_profitability = sum(p['net_profit'] for p in player_profitability)
     analytics['total_profitability'] = total_profitability
 
     # 3. Ranking of buyouts (most expensive buyout signings and sales)
+    print('Analyzing buyout signings...')
     buyout_signings = [t for t in transactions if t['type'] == 'buyout_signing']
     buyout_signings.sort(key=lambda x: abs(x['amount']), reverse=True)
     analytics['top_buyout_signings'] = buyout_signings
@@ -179,6 +181,7 @@ def _analyze(transactions):
     analytics['top_buyout_sales'] = buyout_sales
 
     # 4. Transaction type breakdown
+    print('Analyzing transaction type breakdown...')
     type_summary = defaultdict(lambda: {'count': 0, 'total_amount': 0, 'avg_amount': 0})
     for t in transactions:
         type_summary[t['type']]['count'] += 1
@@ -189,6 +192,7 @@ def _analyze(transactions):
     analytics['type_summary'] = dict(type_summary)
 
     # 5. Most active trading partners (league players)
+    print('Analyzing most active trading partners...')
     trading_partners = defaultdict(lambda: {'purchases': 0, 'sales': 0, 'spent': 0, 'earned': 0, 'net_exchange': 0})
     for t in transactions:
         if t['league_player_associated']:
@@ -210,16 +214,19 @@ def _analyze(transactions):
     analytics['top_trading_partners'] = top_partners
 
     # 6. Most expensive mistakes (players bought and sold at a loss)
+    print('Analyzing biggest losses...')
     biggest_losses = [p for p in player_profitability if p['net_profit'] < 0]
     biggest_losses.sort(key=lambda x: x['net_profit'])
     analytics['biggest_losses'] = biggest_losses
 
     # 7. Best deals (highest profit players)
+    print('Analyzing best deals...')
     best_deals = [p for p in player_profitability if p['net_profit'] > 0]
     best_deals.sort(key=lambda x: x['net_profit'], reverse=True)
     analytics['best_deals'] = best_deals
 
     # 8. Clause increase analysis
+    print('Analyzing clause increase analysis...')
     clause_increases = [t for t in transactions if t['type'] == 'clause_increase']
     total_clause_cost = sum(abs(t['amount']) for t in clause_increases)
     analytics['clause_increase_summary'] = {
@@ -229,6 +236,7 @@ def _analyze(transactions):
     }
 
     # 9. Current squad value (players purchased but not sold, or initial squad with clause increases)
+    print('Analyzing current squad value...')
     current_squad = []
     for player, data in player_transactions.items():
         # Include players who haven't been sold AND either were purchased OR have clause increases
@@ -248,74 +256,6 @@ def _analyze(transactions):
     analytics['current_squad_total_investment'] = sum(p['total_invested'] for p in current_squad)
 
     return analytics
-
-
-def _print_analytics(analytics, print_top_n):
-    # Print analytics
-    print('\n' + '=' * 70)
-    print('MISTER BALANCE ANALYTICS')
-    print('=' * 70)
-
-    # Total profitability
-    print(f'\n📊 TOTAL PROFITABILITY (Sold Players): {analytics["total_profitability"]:,}')
-
-    # Transaction type summary
-    print('\n📈 TRANSACTION TYPE BREAKDOWN:')
-    for trans_type, summary in sorted(analytics['type_summary'].items()):
-        print(f'  {trans_type}:')
-        print(f'    Count: {summary["count"]}')
-        print(f'    Total: {summary["total_amount"]:,}')
-        print(f'    Average: {summary["avg_amount"]:,.0f}')
-
-    # Best deals
-    print(f'\n💰 TOP {print_top_n} BEST DEALS (Highest Profit):')
-    for i, player in enumerate(analytics['best_deals'][:print_top_n], 1):
-        print(f'  {i}. {player["player"]}: +{player["net_profit"]:,}')
-        print(f'     Spent: {player["total_spent"]:,} | Earned: {player["total_earned"]:,}')
-
-    # Biggest losses
-    print(f'\n📉 TOP {print_top_n} BIGGEST LOSSES:')
-    for i, player in enumerate(analytics['biggest_losses'][:print_top_n], 1):
-        print(f'  {i}. {player["player"]}: {player["net_profit"]:,}')
-        print(f'     Spent: {player["total_spent"]:,} | Earned: {player["total_earned"]:,}')
-
-    # Top buyout signings
-    print(f'\n🔥 TOP {print_top_n} MOST EXPENSIVE BUYOUT SIGNINGS:')
-    for i, t in enumerate(analytics['top_buyout_signings'][:print_top_n], 1):
-        print(f'  {i}. {t["footballer"]}: {t["amount"]:,}')
-        if t['league_player_associated']:
-            print(f'     From: {t["league_player_associated"]}')
-
-    # Top buyout sales
-    print(f'\n💸 TOP {print_top_n} HIGHEST BUYOUT SALES:')
-    for i, t in enumerate(analytics['top_buyout_sales'][:print_top_n], 1):
-        print(f'  {i}. {t["footballer"]}: +{t["amount"]:,}')
-        if t['league_player_associated']:
-            print(f'     To: {t["league_player_associated"]}')
-
-    # Top trading partners
-    print(f'\n🤝 TOP {print_top_n} TRADING PARTNERS (by Net Exchange):')
-    for i, partner in enumerate(analytics['top_trading_partners'][:print_top_n], 1):
-        print(f'  {i}. {partner["partner"]}')
-        print(f'     Purchases: {partner["purchases"]} | Sales: {partner["sales"]}')
-        print(f'     Spent: {partner["spent"]:,} | Earned: {partner["earned"]:,}')
-        print(f'     Net Exchange: {partner["net_exchange"]:+,}')
-
-    # Clause increase summary
-    print('\n⚠️  CLAUSE INCREASE SUMMARY:')
-    clause_sum = analytics['clause_increase_summary']
-    print(f'  Total Increases: {clause_sum["total_count"]}')
-    print(f'  Total Cost: {clause_sum["total_cost"]:,}')
-    print(f'  Average Cost: {clause_sum["avg_cost"]:,.0f}')
-
-    # Current squad
-    print(f'\n👥 CURRENT SQUAD INVESTMENT: {analytics["current_squad_total_investment"]:,}')
-    print(f'  Players in squad: {len(analytics["current_squad"])}')
-    print('  Squad investments:')
-    for i, player in enumerate(analytics['current_squad'][:print_top_n], 1):
-        print(f'    {i}. {player["player"]}: {player["total_invested"]:,}')
-
-    print('\n' + '=' * 70)
 
 
 def _save_pdf(analytics, output_pdf):
@@ -576,16 +516,16 @@ def _save_pdf(analytics, output_pdf):
     story.append(squad_table)
     # Build PDF
     doc.build(story)
-    print(f'\n✅ PDF saved to: {output_pdf}')
+    print(f'✅ PDF saved to: {output_pdf}')
 
 
-def main(input_html, output_pdf, print_top_n):
+def main(input_html, output_pdf):
     transactions = _parse_html(input_html)
-    analytics = _analyze(transactions)
-    _print_analytics(analytics, print_top_n)
-    _save_pdf(analytics, output_pdf)
+    if transactions:
+        analytics = _analyze(transactions)
+        _save_pdf(analytics, output_pdf)
 
 
 if __name__ == '__main__':
     args = parse_args()
-    main(args.input_html, args.output_pdf, args.print_top_n)
+    main(args.input_html, args.output_pdf)

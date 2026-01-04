@@ -19,48 +19,69 @@ A Python tool that analyzes your Mister/BeManager balance history and generates 
 
 ## Quick Start
 
-1. Go to your [Balance Feed](https://mister.mundodeportivo.com/feed#balance) (click the balance number in the top right)
-2. Save the page as HTML: `Cmd + S` (Mac) or `Ctrl + S` (Windows)
-3. Run the analyzer (see [Usage](#usage))
-4. Open your PDF report!
+1. **Clone or fork this repository**
+
+   ```bash
+   git clone https://github.com/AlbertSuarez/mister-balance-analyzer.git
+   cd mister-balance-analyzer
+   ```
+
+2. **Save your balance page**
+
+   - Go to your [Balance Feed](https://mister.mundodeportivo.com/feed#balance) (click the balance number in the top right)
+   - Save the page as HTML: `Cmd + S` (Mac) or `Ctrl + S` (Windows)
+   - Save it in the `data/` folder (e.g., `data/my-team.html`)
+
+3. **Install dependencies** (see [Setup](#setup) for details)
+
+   ```bash
+   pip install -r requirements.lock
+   ```
+
+4. **Run the analyzer**
+
+   ```bash
+   python src/main.py --input_html data/my-team.html --output_pdf data/my-team.pdf
+   ```
+
+5. **Open your PDF report!** 🎉
 
 ## Setup
 
 ### Requirements
 
 - Python 3.11.3+
-- [pyenv](https://github.com/pyenv/pyenv) (recommended for virtual environments)
 
 ### Installation
 
-1. Create and activate virtual environment
+**Option 1: Using pyenv** (recommended)
 
-   ```bash
-   pyenv virtualenv 3.11.3 mister-balance-analyzer
-   pyenv activate mister-balance-analyzer
-   ```
+```bash
+pyenv virtualenv 3.11.3 mister-balance-analyzer
+pyenv activate mister-balance-analyzer
+pip install -r requirements.lock
+```
 
-2. Install dependencies
+**Option 2**: Using system Python
 
-   ```bash
-   pip install -r requirements.lock
-   ```
+```bash
+pip install -r requirements.lock
+```
 
 ### Usage
 
-Run the analyzer with your saved HTML file:
+**Basic usage:**
 
 ```bash
-python src/main.py --input_html data/your-balance.html --output_pdf data/your-report.pdf
+python src/main.py --input_html data/my-team.html --output_pdf data/my-team.pdf
 ```
 
-> [!NOTE]
-**Optional**: Filter by date range:
+**Filter by date range:**
 
 ```bash
 python src/main.py \
-  --input_html data/your-balance.html \
-  --output_pdf data/your-report.pdf \
+  --input_html data/my-team.html \
+  --output_pdf data/my-team.pdf \
   --date-range "2025-10-01,2025-11-01"
 ```
 

@@ -56,9 +56,6 @@ def _parse_html(input_html):
             balance_after = int(balance_clean)
         except ValueError:
             balance_after = 0
-        # Determine if it's positive or negative
-        is_positive = 'green' in amount_div.get('class', []) if amount_div else False
-        is_negative = 'red' in amount_div.get('class', []) if amount_div else False
         # Add transaction to list
         transactions.append(
             {
@@ -67,8 +64,6 @@ def _parse_html(input_html):
                 'date_full': date_full,
                 'amount': amount,
                 'balance_after': balance_after,
-                'is_positive': is_positive,
-                'is_negative': is_negative,
             }
         )
     # Return the transactions

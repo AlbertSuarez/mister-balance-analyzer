@@ -1,5 +1,6 @@
 import argparse
 import re
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from bs4 import BeautifulSoup
@@ -112,12 +113,202 @@ def _parse_html(input_html):
             }
         )
     # Return the transactions
-    print(f'Found {len(transactions)} transactions')
     return transactions
+
+
+def _analyze(transactions):
+    analytics = {}
+
+    # 1. Player profitability analysis
+    player_transactions = defaultdict(lambda: {'purchases': [], 'sales': [], 'clause_increases': []})
+    for t in transactions:
+        if t['footballer']:
+            if t['type'] in ['purchase', 'buyout_signing', 'loan_purchase']:
+                player_transactions[t['footballer']]['purchases'].append(t)
+            elif t['type'] in ['sale', 'buyout_sale', 'loan_sale']:
+                player_transactions[t['footballer']]['sales'].append(t)
+            elif t['type'] == 'clause_increase':
+                player_transactions[t['footballer']]['clause_increases'].append(t)
+    # Calculate profitability for each player
+    player_profitability = []
+    for player, data in player_transactions.items():
+        total_spent = sum(abs(t['amount']) for t in data['purchases'])
+        total_spent += sum(abs(t['amount']) for t in data['clause_increases'])
+        total_earned = sum(t['amount'] for t in data['sales'])
+        net_profit = total_earned - total_spent
+        # Only include players who have been sold AND were actually purchased (not initial free squad)
+        if data['sales'] and data['purchases']:
+            player_profitability.append(
+                {
+                    'player': player,
+                    'total_spent': total_spent,
+                    'total_earned': total_earned,
+                    'net_profit': net_profit,
+                    'num_purchases': len(data['purchases']),
+                    'num_sales': len(data['sales']),
+                    'num_clause_increases': len(data['clause_increases']),
+                }
+            )
+    # Sort by profitability
+    player_profitability.sort(key=lambda x: x['net_profit'], reverse=True)
+    analytics['player_profitability'] = player_profitability
+
+    # 2. Total profitability (players no longer in team)
+    total_profitability = sum(p['net_profit'] for p in player_profitability)
+    analytics['total_profitability'] = total_profitability
+
+    # 3. Ranking of buyouts (most expensive buyout signings and sales)
+    buyout_signings = [t for t in transactions if t['type'] == 'buyout_signing']
+    buyout_signings.sort(key=lambda x: abs(x['amount']), reverse=True)
+    analytics['top_buyout_signings'] = buyout_signings
+    buyout_sales = [t for t in transactions if t['type'] == 'buyout_sale']
+    buyout_sales.sort(key=lambda x: x['amount'], reverse=True)
+    analytics['top_buyout_sales'] = buyout_sales
+
+    # 4. Transaction type breakdown
+    type_summary = defaultdict(lambda: {'count': 0, 'total_amount': 0, 'avg_amount': 0})
+    for t in transactions:
+        type_summary[t['type']]['count'] += 1
+        type_summary[t['type']]['total_amount'] += t['amount']
+    for trans_type in type_summary:
+        count = type_summary[trans_type]['count']
+        type_summary[trans_type]['avg_amount'] = type_summary[trans_type]['total_amount'] / count if count > 0 else 0
+    analytics['type_summary'] = dict(type_summary)
+
+    # 5. Most active trading partners (league players)
+    trading_partners = defaultdict(lambda: {'purchases': 0, 'sales': 0, 'spent': 0, 'earned': 0, 'net_exchange': 0})
+    for t in transactions:
+        if t['league_player_associated']:
+            partner = t['league_player_associated']
+            if t['type'] in ['buyout_signing', 'loan_purchase']:
+                trading_partners[partner]['purchases'] += 1
+                trading_partners[partner]['spent'] += abs(t['amount'])
+            elif t['type'] in ['buyout_sale', 'loan_sale']:
+                trading_partners[partner]['sales'] += 1
+                trading_partners[partner]['earned'] += t['amount']
+    # Calculate net exchange for each partner
+    for partner in trading_partners:
+        trading_partners[partner]['net_exchange'] = (
+            trading_partners[partner]['earned'] - trading_partners[partner]['spent']
+        )
+    top_partners = sorted(
+        [{'partner': k, **v} for k, v in trading_partners.items()], key=lambda x: x['net_exchange'], reverse=True
+    )
+    analytics['top_trading_partners'] = top_partners
+
+    # 6. Most expensive mistakes (players bought and sold at a loss)
+    biggest_losses = [p for p in player_profitability if p['net_profit'] < 0]
+    biggest_losses.sort(key=lambda x: x['net_profit'])
+    analytics['biggest_losses'] = biggest_losses
+
+    # 7. Best deals (highest profit players)
+    best_deals = [p for p in player_profitability if p['net_profit'] > 0]
+    best_deals.sort(key=lambda x: x['net_profit'], reverse=True)
+    analytics['best_deals'] = best_deals
+
+    # 8. Clause increase analysis
+    clause_increases = [t for t in transactions if t['type'] == 'clause_increase']
+    total_clause_cost = sum(abs(t['amount']) for t in clause_increases)
+    analytics['clause_increase_summary'] = {
+        'total_count': len(clause_increases),
+        'total_cost': total_clause_cost,
+        'avg_cost': total_clause_cost / len(clause_increases) if clause_increases else 0,
+    }
+
+    # 9. Current squad value (players purchased but not sold, or initial squad with clause increases)
+    current_squad = []
+    for player, data in player_transactions.items():
+        # Include players who haven't been sold AND either were purchased OR have clause increases
+        if not data['sales'] and (data['purchases'] or data['clause_increases']):
+            total_invested = sum(abs(t['amount']) for t in data['purchases'])
+            total_invested += sum(abs(t['amount']) for t in data['clause_increases'])
+            current_squad.append(
+                {
+                    'player': player,
+                    'total_invested': total_invested,
+                    'num_purchases': len(data['purchases']),
+                    'num_clause_increases': len(data['clause_increases']),
+                }
+            )
+    current_squad.sort(key=lambda x: x['total_invested'], reverse=True)
+    analytics['current_squad'] = current_squad
+    analytics['current_squad_total_investment'] = sum(p['total_invested'] for p in current_squad)
+
+    return analytics
+
+
+def _print_analytics(analytics):
+    # Print analytics
+    print('\n' + '=' * 70)
+    print('MISTER BALANCE ANALYTICS')
+    print('=' * 70)
+
+    # Total profitability
+    print(f'\n📊 TOTAL PROFITABILITY (Sold Players): {analytics["total_profitability"]:,}')
+
+    # Transaction type summary
+    print('\n📈 TRANSACTION TYPE BREAKDOWN:')
+    for trans_type, summary in sorted(analytics['type_summary'].items()):
+        print(f'  {trans_type}:')
+        print(f'    Count: {summary["count"]}')
+        print(f'    Total: {summary["total_amount"]:,}')
+        print(f'    Average: {summary["avg_amount"]:,.0f}')
+
+    # Best deals
+    print('\n💰 TOP 20 BEST DEALS (Highest Profit):')
+    for i, player in enumerate(analytics['best_deals'][:20], 1):
+        print(f'  {i}. {player["player"]}: +{player["net_profit"]:,}')
+        print(f'     Spent: {player["total_spent"]:,} | Earned: {player["total_earned"]:,}')
+
+    # Biggest losses
+    print('\n📉 TOP 20 BIGGEST LOSSES:')
+    for i, player in enumerate(analytics['biggest_losses'][:20], 1):
+        print(f'  {i}. {player["player"]}: {player["net_profit"]:,}')
+        print(f'     Spent: {player["total_spent"]:,} | Earned: {player["total_earned"]:,}')
+
+    # Top buyout signings
+    print('\n🔥 TOP 20 MOST EXPENSIVE BUYOUT SIGNINGS:')
+    for i, t in enumerate(analytics['top_buyout_signings'][:20], 1):
+        print(f'  {i}. {t["footballer"]}: {t["amount"]:,}')
+        if t['league_player_associated']:
+            print(f'     From: {t["league_player_associated"]}')
+
+    # Top buyout sales
+    print('\n💸 TOP 20 HIGHEST BUYOUT SALES:')
+    for i, t in enumerate(analytics['top_buyout_sales'][:20], 1):
+        print(f'  {i}. {t["footballer"]}: +{t["amount"]:,}')
+        if t['league_player_associated']:
+            print(f'     To: {t["league_player_associated"]}')
+
+    # Top trading partners
+    print('\n🤝 TOP 20 TRADING PARTNERS (by Net Exchange):')
+    for i, partner in enumerate(analytics['top_trading_partners'][:20], 1):
+        print(f'  {i}. {partner["partner"]}')
+        print(f'     Purchases: {partner["purchases"]} | Sales: {partner["sales"]}')
+        print(f'     Spent: {partner["spent"]:,} | Earned: {partner["earned"]:,}')
+        print(f'     Net Exchange: {partner["net_exchange"]:+,}')
+
+    # Clause increase summary
+    print('\n⚠️  CLAUSE INCREASE SUMMARY:')
+    clause_sum = analytics['clause_increase_summary']
+    print(f'  Total Increases: {clause_sum["total_count"]}')
+    print(f'  Total Cost: {clause_sum["total_cost"]:,}')
+    print(f'  Average Cost: {clause_sum["avg_cost"]:,.0f}')
+
+    # Current squad
+    print(f'\n👥 CURRENT SQUAD INVESTMENT: {analytics["current_squad_total_investment"]:,}')
+    print(f'  Players in squad: {len(analytics["current_squad"])}')
+    print('  Squad investments:')
+    for i, player in enumerate(analytics['current_squad'][:20], 1):
+        print(f'    {i}. {player["player"]}: {player["total_invested"]:,}')
+
+    print('\n' + '=' * 70)
 
 
 def main(input_html, output_pdf):
     transactions = _parse_html(input_html)
+    analytics = _analyze(transactions)
+    _print_analytics(analytics)
 
 
 if __name__ == '__main__':

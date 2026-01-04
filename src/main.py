@@ -4,6 +4,18 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from bs4 import BeautifulSoup
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 
 def parse_args():
@@ -306,10 +318,272 @@ def _print_analytics(analytics, print_top_n):
     print('\n' + '=' * 70)
 
 
+def _save_pdf(analytics, output_pdf):
+    # Create PDF document
+    doc = SimpleDocTemplate(output_pdf, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
+    story = []
+    styles = getSampleStyleSheet()
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#1a1a2e'),
+        spaceAfter=30,
+        alignment=1,
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.HexColor('#0f3460'),
+        spaceAfter=12,
+        spaceBefore=12,
+    )
+    subheading_style = ParagraphStyle(
+        'CustomSubHeading', parent=styles['Heading3'], fontSize=12, textColor=colors.HexColor('#16213e'), spaceAfter=8
+    )
+    # Title
+    story.append(Paragraph('MISTER BALANCE ANALYTICS', title_style))
+    story.append(Spacer(1, 0.2 * inch))
+    # Total Profitability
+    story.append(Paragraph('📊 Total Profitability (Sold Players)', heading_style))
+    profit_data = [[f'{analytics["total_profitability"]:,}']]
+    profit_table = Table(profit_data, colWidths=[5 * inch])
+    profit_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#e8f5e9')),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#2e7d32')),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 18),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ]
+        )
+    )
+    story.append(profit_table)
+    story.append(Spacer(1, 0.3 * inch))
+    # Transaction Type Breakdown
+    story.append(Paragraph('📈 Transaction Type Breakdown', heading_style))
+    type_data = [['Type', 'Count', 'Total', 'Average']]
+    for trans_type, summary in sorted(analytics['type_summary'].items()):
+        type_data.append(
+            [trans_type, str(summary['count']), f'{summary["total_amount"]:,}', f'{summary["avg_amount"]:,.0f}']
+        )
+    type_table = Table(type_data, colWidths=[2 * inch, 1 * inch, 1.5 * inch, 1.5 * inch])
+    type_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a237e')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ]
+        )
+    )
+    story.append(type_table)
+    story.append(Spacer(1, 0.3 * inch))
+    # Best Deals
+    story.append(Paragraph('💰 Best Deals (Highest Profit)', heading_style))
+    best_data = [['#', 'Player', 'Spent', 'Earned', 'Net Profit']]
+    for i, player in enumerate(analytics['best_deals'], 1):
+        best_data.append(
+            [
+                str(i),
+                player['player'],
+                f'{player["total_spent"]:,}',
+                f'{player["total_earned"]:,}',
+                f'+{player["net_profit"]:,}',
+            ]
+        )
+    best_table = Table(best_data, colWidths=[0.3 * inch, 2 * inch, 1.2 * inch, 1.2 * inch, 1.3 * inch])
+    best_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2e7d32')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f1f8e9')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(best_table)
+    story.append(PageBreak())
+    # Biggest Losses
+    story.append(Paragraph('📉 Biggest Losses', heading_style))
+    loss_data = [['#', 'Player', 'Spent', 'Earned', 'Net Loss']]
+    for i, player in enumerate(analytics['biggest_losses'], 1):
+        loss_data.append(
+            [
+                str(i),
+                player['player'],
+                f'{player["total_spent"]:,}',
+                f'{player["total_earned"]:,}',
+                f'{player["net_profit"]:,}',
+            ]
+        )
+    loss_table = Table(loss_data, colWidths=[0.3 * inch, 2 * inch, 1.2 * inch, 1.2 * inch, 1.3 * inch])
+    loss_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#c62828')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ffebee')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(loss_table)
+    story.append(Spacer(1, 0.3 * inch))
+    # Top Buyout Signings
+    story.append(Paragraph('🔥 Most Expensive Buyout Signings', heading_style))
+    signing_data = [['#', 'Player', 'Amount', 'From']]
+    for i, t in enumerate(analytics['top_buyout_signings'], 1):
+        signing_data.append(
+            [str(i), t['footballer'], f'{t["amount"]:,}', t.get('league_player_associated', '-') or '-']
+        )
+    signing_table = Table(signing_data, colWidths=[0.3 * inch, 2 * inch, 1.5 * inch, 2.2 * inch])
+    signing_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#d84315')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#fbe9e7')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(signing_table)
+    story.append(PageBreak())
+    # Top Buyout Sales
+    story.append(Paragraph('💸 Highest Buyout Sales', heading_style))
+    sale_data = [['#', 'Player', 'Amount', 'To']]
+    for i, t in enumerate(analytics['top_buyout_sales'], 1):
+        sale_data.append([str(i), t['footballer'], f'+{t["amount"]:,}', t.get('league_player_associated', '-') or '-'])
+    sale_table = Table(sale_data, colWidths=[0.3 * inch, 2 * inch, 1.5 * inch, 2.2 * inch])
+    sale_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#388e3c')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#e8f5e9')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(sale_table)
+    story.append(Spacer(1, 0.3 * inch))
+    # Trading Partners
+    story.append(Paragraph('🤝 Trading Partners (by Net Exchange)', heading_style))
+    partner_data = [['#', 'Partner', 'Purchases', 'Sales', 'Net Exchange']]
+    for i, partner in enumerate(analytics['top_trading_partners'], 1):
+        net_sign = '+' if partner['net_exchange'] >= 0 else ''
+        partner_data.append(
+            [
+                str(i),
+                partner['partner'],
+                str(partner['purchases']),
+                str(partner['sales']),
+                f'{net_sign}{partner["net_exchange"]:,}',
+            ]
+        )
+    partner_table = Table(partner_data, colWidths=[0.3 * inch, 2.2 * inch, 1 * inch, 1 * inch, 1.5 * inch])
+    partner_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1565c0')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#e3f2fd')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(partner_table)
+    story.append(PageBreak())
+    # Clause Increase Summary
+    story.append(Paragraph('⚠️ Clause Increase Summary', heading_style))
+    clause_sum = analytics['clause_increase_summary']
+    clause_data = [
+        ['Total Increases', 'Total Cost', 'Average Cost'],
+        [str(clause_sum['total_count']), f'{clause_sum["total_cost"]:,}', f'{clause_sum["avg_cost"]:,.0f}'],
+    ]
+    clause_table = Table(clause_data, colWidths=[2 * inch, 2 * inch, 2 * inch])
+    clause_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f57c00')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#fff3e0')),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]
+        )
+    )
+    story.append(clause_table)
+    story.append(Spacer(1, 0.3 * inch))
+    # Current Squad
+    story.append(
+        Paragraph(f'👥 Current Squad Investment: {analytics["current_squad_total_investment"]:,}', heading_style)
+    )
+    story.append(Paragraph(f'Players in squad: {len(analytics["current_squad"])}', subheading_style))
+    squad_data = [['#', 'Player', 'Total Invested']]
+    for i, player in enumerate(analytics['current_squad'], 1):
+        squad_data.append([str(i), player['player'], f'{player["total_invested"]:,}'])
+    squad_table = Table(squad_data, colWidths=[0.5 * inch, 3.5 * inch, 2 * inch])
+    squad_table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#6a1b9a')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f3e5f5')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(squad_table)
+    # Build PDF
+    doc.build(story)
+    print(f'\n✅ PDF saved to: {output_pdf}')
+
+
 def main(input_html, output_pdf, print_top_n):
     transactions = _parse_html(input_html)
     analytics = _analyze(transactions)
     _print_analytics(analytics, print_top_n)
+    _save_pdf(analytics, output_pdf)
 
 
 if __name__ == '__main__':

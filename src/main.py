@@ -411,6 +411,7 @@ def _save_pdf(analytics, output_pdf, transactions):
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
         fontSize=24,
         textColor=colors.HexColor('#1a1a2e'),
         spaceAfter=30,
@@ -419,13 +420,19 @@ def _save_pdf(analytics, output_pdf, transactions):
     heading_style = ParagraphStyle(
         'CustomHeading',
         parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
         fontSize=16,
         textColor=colors.HexColor('#0f3460'),
         spaceAfter=12,
         spaceBefore=12,
     )
     subheading_style = ParagraphStyle(
-        'CustomSubHeading', parent=styles['Heading3'], fontSize=12, textColor=colors.HexColor('#16213e'), spaceAfter=8
+        'CustomSubHeading',
+        parent=styles['Heading3'],
+        fontName='Helvetica',
+        fontSize=12,
+        textColor=colors.HexColor('#16213e'),
+        spaceAfter=8,
     )
     # Title
     story.append(Paragraph('MISTER BALANCE ANALYTICS', title_style))

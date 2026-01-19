@@ -58,10 +58,13 @@ def __parse_reason(reason):
             league_player_associated = parts[1].strip() if parts[1].strip() != 'Mister' else None
     # Pattern: "Modificación de cláusula (X%) de Footballer" (clause_increase)
     elif 'Modificación de cláusula' in reason:
-        # Split on the last occurrence of ' de '
-        last_de_idx = reason.rfind(' de ')
-        if last_de_idx != -1:
-            footballer = reason[last_de_idx + 4 :].strip()
+        # Find the ' de ' after the closing parenthesis to handle names with 'de' in them (e.g., "Jorge de Frutos")
+        closing_paren_idx = reason.find(')')
+        if closing_paren_idx != -1:
+            # Look for ' de ' after the closing parenthesis
+            de_idx = reason.find(' de ', closing_paren_idx)
+            if de_idx != -1:
+                footballer = reason[de_idx + 4 :].strip()
     # Pattern: "Jornada X" (bonuses) - no footballer or league player
     return footballer, league_player_associated
 

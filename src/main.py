@@ -39,7 +39,7 @@ def __parse_transaction_type(type_str):
         'Buyout signing': 'buyout_signing',  # Buying a player via their buyout clause
         'Loan purchase': 'loan_purchase',  # Acquiring a player on loan
         'Loan sale': 'loan_sale',  # Loaning out a player to another team
-        'Penalización': 'clause_increase',  # Player's clause increased
+        'Penalización': 'clause_increase',  # Player's clause modified (increase if negative, decrease if positive)
         'Purchase': 'purchase',  # Regular player purchases from the market
         'Sale': 'sale',  # Regular player sales to the market
     }
@@ -170,7 +170,6 @@ def _parse_html(input_html):
         # Extract transaction type
         type_div = left_div.find('div', class_='type')
         transaction_type_raw = type_div.get_text(strip=True) if type_div else ''
-        transaction_type = __parse_transaction_type(transaction_type_raw)
         # Extract reason/description and parse to extract footballer and league player
         reason_div = left_div.find('div', class_='reason')
         reason = reason_div.get_text(strip=True, separator=' ') if reason_div else ''
@@ -194,6 +193,14 @@ def _parse_html(input_html):
             amount = int(amount_clean)
         except ValueError:
             amount = 0
+        # Parse transaction type (needs amount and reason to differentiate clause modifications)
+        transaction_type = __parse_transaction_type(transaction_type_raw)
+        # Differentiate between clause increase (Penalización) and clause decrease (Bonificación with clause modification)
+        if transaction_type == 'clause_increase' and amount > 0:
+            transaction_type = 'clause_decrease'
+        # Bonificación with "Modificación de cláusula" is actually a clause decrease
+        if transaction_type == 'bonuses' and 'Modificación de cláusula' in reason:
+            transaction_type = 'clause_decrease'
         # Extract balance after transaction
         balance_small = right_div.find('small')
         balance_text = balance_small.get_text(strip=True) if balance_small else ''
@@ -238,7 +245,9 @@ def _analyze(transactions):
 
     # 1. Player profitability analysis
     print('Analyzing player profitability...')
-    player_transactions = defaultdict(lambda: {'purchases': [], 'sales': [], 'clause_increases': []})
+    player_transactions = defaultdict(
+        lambda: {'purchases': [], 'sales': [], 'clause_increases': [], 'clause_decreases': []}
+    )
     for t in transactions:
         if t['footballer']:
             if t['type'] in ['purchase', 'buyout_signing', 'loan_purchase']:
@@ -247,24 +256,37 @@ def _analyze(transactions):
                 player_transactions[t['footballer']]['sales'].append(t)
             elif t['type'] == 'clause_increase':
                 player_transactions[t['footballer']]['clause_increases'].append(t)
+            elif t['type'] == 'clause_decrease':
+                player_transactions[t['footballer']]['clause_decreases'].append(t)
     # Calculate profitability per "stint" (each time a player is in the team)
     # A stint starts with a purchase and ends with a sale
     player_profitability = []
     for player, data in player_transactions.items():
         if not data['purchases']:
             continue
-        # Sort all transactions by date
-        all_trans = data['purchases'] + data['sales'] + data['clause_increases']
-        all_trans.sort(key=lambda x: x['date_full'])
+        # Sort all transactions by date, with clause_decreases before sales at same timestamp
+        all_trans = data['purchases'] + data['sales'] + data['clause_increases'] + data['clause_decreases']
+        # Custom sort: by date first, then clause_decrease before sale at same timestamp
+        type_priority = {
+            'purchase': 0,
+            'buyout_signing': 0,
+            'loan_purchase': 0,
+            'clause_increase': 1,
+            'clause_decrease': 2,  # Process clause_decrease before sale
+            'sale': 3,
+            'buyout_sale': 3,
+            'loan_sale': 3,
+        }
+        all_trans.sort(key=lambda x: (x['date_full'], type_priority.get(x['type'], 99)))
         # Group transactions into stints
         stints = []
-        current_stint = {'purchases': [], 'sales': [], 'clause_increases': []}
+        current_stint = {'purchases': [], 'sales': [], 'clause_increases': [], 'clause_decreases': []}
         in_stint = False
         for t in all_trans:
             if t['type'] in ['purchase', 'buyout_signing', 'loan_purchase']:
                 if not in_stint:
                     # Start new stint
-                    current_stint = {'purchases': [t], 'sales': [], 'clause_increases': []}
+                    current_stint = {'purchases': [t], 'sales': [], 'clause_increases': [], 'clause_decreases': []}
                     in_stint = True
                 else:
                     # Additional purchase in same stint (shouldn't happen often)
@@ -277,10 +299,13 @@ def _analyze(transactions):
                     in_stint = False
                 else:
                     # Sale without purchase (initial squad player sold)
-                    stints.append({'purchases': [], 'sales': [t], 'clause_increases': []})
+                    stints.append({'purchases': [], 'sales': [t], 'clause_increases': [], 'clause_decreases': []})
             elif t['type'] == 'clause_increase':
                 if in_stint:
                     current_stint['clause_increases'].append(t)
+            elif t['type'] == 'clause_decrease':
+                if in_stint:
+                    current_stint['clause_decreases'].append(t)
         # If still in stint (player currently in squad), add it
         if in_stint:
             stints.append(current_stint)
@@ -290,6 +315,7 @@ def _analyze(transactions):
                 total_spent = sum(abs(t['amount']) for t in stint['purchases'])
                 total_spent += sum(abs(t['amount']) for t in stint['clause_increases'])
                 total_earned = sum(t['amount'] for t in stint['sales'])
+                total_earned += sum(t['amount'] for t in stint['clause_decreases'])  # Add clause decrease income
                 net_profit = total_earned - total_spent
                 # Add stint number if player has multiple stints
                 player_name = (
@@ -371,49 +397,66 @@ def _analyze(transactions):
     best_deals.sort(key=lambda x: x['net_profit'], reverse=True)
     analytics['best_deals'] = best_deals
 
-    # 8. Clause increase analysis
-    print('Analyzing clause increase analysis...')
+    # 8. Clause modification analysis (increases and decreases)
+    print('Analyzing clause modification analysis...')
     clause_increases = [t for t in transactions if t['type'] == 'clause_increase']
-    total_clause_cost = sum(abs(t['amount']) for t in clause_increases)
+    clause_decreases = [t for t in transactions if t['type'] == 'clause_decrease']
+    total_clause_increase_cost = sum(abs(t['amount']) for t in clause_increases)
+    total_clause_decrease_income = sum(t['amount'] for t in clause_decreases)
     analytics['clause_increase_summary'] = {
         'total_count': len(clause_increases),
-        'total_cost': total_clause_cost,
-        'avg_cost': total_clause_cost / len(clause_increases) if clause_increases else 0,
+        'total_cost': total_clause_increase_cost,
+        'avg_cost': total_clause_increase_cost / len(clause_increases) if clause_increases else 0,
     }
+    analytics['clause_decrease_summary'] = {
+        'total_count': len(clause_decreases),
+        'total_income': total_clause_decrease_income,
+        'avg_income': total_clause_decrease_income / len(clause_decreases) if clause_decreases else 0,
+    }
+    analytics['clause_net_cost'] = total_clause_increase_cost - total_clause_decrease_income
 
     # 9. Current squad value (players purchased but not sold, or initial squad with clause increases)
     print('Analyzing current squad value...')
     current_squad = []
     for player, data in player_transactions.items():
-        # Check if player is currently in squad by looking at most recent transaction
-        all_player_trans = data['purchases'] + data['sales'] + data['clause_increases']
-        if not all_player_trans:
-            continue
-        # Sort by date to find most recent transaction
-        all_player_trans.sort(key=lambda x: x['date_full'])
-        most_recent = all_player_trans[-1]
-        # Player is in squad if most recent transaction is NOT a sale
-        is_in_squad = most_recent['type'] not in ['sale', 'buyout_sale', 'loan_sale']
+        # Check if player is currently in squad by looking at most recent purchase/sale (ignore clause modifications)
+        purchase_sale_trans = data['purchases'] + data['sales']
+        if not purchase_sale_trans:
+            # Player never purchased or sold (only clause modifications) - check if they have clause increases (initial squad)
+            if data['clause_increases']:
+                is_in_squad = True
+            else:
+                continue
+        else:
+            # Sort by date to find most recent purchase or sale
+            purchase_sale_trans.sort(key=lambda x: x['date_full'])
+            most_recent = purchase_sale_trans[-1]
+            # Player is in squad if most recent purchase/sale is NOT a sale
+            is_in_squad = most_recent['type'] not in ['sale', 'buyout_sale', 'loan_sale']
         if is_in_squad and (data['purchases'] or data['clause_increases']):
             # Calculate investment only from transactions AFTER the last sale (if any)
             last_sale_date = None
             if data['sales']:
                 last_sale_date = max(t['date_full'] for t in data['sales'])
-            # Sum purchases and clause increases after last sale
+            # Sum purchases and clause increases/decreases after last sale
             if last_sale_date:
                 relevant_purchases = [t for t in data['purchases'] if t['date_full'] > last_sale_date]
                 relevant_clause_increases = [t for t in data['clause_increases'] if t['date_full'] > last_sale_date]
+                relevant_clause_decreases = [t for t in data['clause_decreases'] if t['date_full'] > last_sale_date]
             else:
                 relevant_purchases = data['purchases']
                 relevant_clause_increases = data['clause_increases']
+                relevant_clause_decreases = data['clause_decreases']
             total_invested = sum(abs(t['amount']) for t in relevant_purchases)
             total_invested += sum(abs(t['amount']) for t in relevant_clause_increases)
+            total_invested -= sum(t['amount'] for t in relevant_clause_decreases)  # Subtract money received back
             current_squad.append(
                 {
                     'player': player,
                     'total_invested': total_invested,
                     'num_purchases': len(relevant_purchases),
                     'num_clause_increases': len(relevant_clause_increases),
+                    'num_clause_decreases': len(relevant_clause_decreases),
                 }
             )
     current_squad.sort(key=lambda x: x['total_invested'], reverse=True)

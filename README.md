@@ -11,7 +11,7 @@
 ⚽️ Balance analyzer from Mister / BeManager
 
 > [!NOTE]
-> **🔗 Example:** [mister-balance-analyzer/data/laliga.pdf](https://asuarez.dev/mister-balance-analyzer/data/laliga.pdf)
+> **🔗 Example:** [mister-balance-analyzer/data/26-laliga.pdf](https://asuarez.dev/mister-balance-analyzer/data/26-laliga.pdf)
 
 ## Summary
 

@@ -2,24 +2,24 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Analyze LaLiga",
+            "name": "Analyze 2026 LaLiga",
             "type": "debugpy",
             "request": "launch",
             "module": "src.main",
             "cwd": "${workspaceFolder}",
             "justMyCode": true,
             "console": "internalConsole",
-            "args": ["--input_html", "data/laliga.html", "--output_pdf", "data/laliga.pdf"]
+            "args": ["--input_html", "data/26-laliga.html", "--output_pdf", "data/26-laliga.pdf"]
         },
         {
-            "name": "Analyze Liga F",
+            "name": "Analyze 2026 Liga F",
             "type": "debugpy",
             "request": "launch",
             "module": "src.main",
             "cwd": "${workspaceFolder}",
             "justMyCode": true,
             "console": "internalConsole",
-            "args": ["--input_html", "data/liga-f.html", "--output_pdf", "data/liga-f.pdf"]
+            "args": ["--input_html", "data/26-liga-f.html", "--output_pdf", "data/26-liga-f.pdf"]
         },
         {
             "name": "Analyze 2026 Mundial",

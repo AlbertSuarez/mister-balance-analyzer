@@ -20,6 +20,16 @@
             "justMyCode": true,
             "console": "internalConsole",
             "args": ["--input_html", "data/liga-f.html", "--output_pdf", "data/liga-f.pdf"]
+        },
+        {
+            "name": "Analyze 2026 Mundial",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.main",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true,
+            "console": "internalConsole",
+            "args": ["--input_html", "data/26-mundial.html", "--output_pdf", "data/26-mundial.pdf"]
         }
     ]
 }
